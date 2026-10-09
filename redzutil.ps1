@@ -1,20 +1,27 @@
 <#
 .SYNOPSIS
-    RedzUtil v1.1 - Windows Toolbox (Fixed)
+    RedzUtil v2.0 - Premium Windows Toolbox
+
+.DESCRIPTION
+    UI محدث بالكامل:
+    - بطاقات Apps مع أيقونات
+    - تصميم فخم داكن
+    - Rounded corners
+    - ألوان neon
+    - Search box
+    - Hover effects
+    - ترتيب أبجدي
 
 .USAGE
-    Save as redzutil.ps1
-    Run as Admin:
-        cd $env:USERPROFILE\Desktop
-        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\redzutil.ps1
+    irm https://raw.githubusercontent.com/gxaff/RedzUtil/main/redzutil.ps1 | iex
 #>
 
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Continue'
 
+$script:Version = "2.0.0"
 $script:LogPath = "$env:USERPROFILE\Desktop\RedzUtil_Log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
-$script:SelectedApps = New-Object System.Collections.ArrayList
+$script:SelectedApps   = New-Object System.Collections.ArrayList
 $script:SelectedTweaks = New-Object System.Collections.ArrayList
 
 function Write-Log {
@@ -33,25 +40,24 @@ function Write-Log {
 function New-RestorePoint {
     Write-Log "Creating restore point..."
     try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore" `
+        Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore" `
             -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
         Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction SilentlyContinue
         Checkpoint-Computer -Description "RedzUtil $(Get-Date -Format 'yyyy-MM-dd HH:mm')" `
             -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
         Write-Log "Restore point created" 'OK'
     } catch {
-        Write-Log "Restore point skipped - $($_.Exception.Message)" 'WARN'
+        Write-Log "Restore point skipped" 'WARN'
     }
 }
 
 # ═══════════════════════════════════════════════════════════
-#  TWEAK ENGINE v1.1 — تسجيل صحيح
+#  TWEAKS
 # ═══════════════════════════════════════════════════════════
 
 function Invoke-Tweak {
     param([string]$Name)
     Write-Log "Applying: $Name"
-
     $success = $false
     $errorMsg = ""
 
@@ -61,7 +67,6 @@ function Invoke-Tweak {
                 $p1 = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection"
                 if (-not (Test-Path $p1)) { New-Item $p1 -Force | Out-Null }
                 Set-ItemProperty $p1 -Name AllowTelemetry -Value 0 -Type DWord -Force
-
                 $p2 = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection"
                 if (-not (Test-Path $p2)) { New-Item $p2 -Force | Out-Null }
                 Set-ItemProperty $p2 -Name AllowTelemetry -Value 0 -Type DWord -Force
@@ -134,9 +139,10 @@ function Invoke-Tweak {
                 $success = $true
             }
             "Dark Mode" {
-                $p = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-                Set-ItemProperty $p -Name AppsUseLightTheme -Value 0 -Type DWord -Force
-                Set-ItemProperty $p -Name SystemUsesLightTheme -Value 0 -Type DWord -Force
+                Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" `
+                    -Name AppsUseLightTheme -Value 0 -Type DWord -Force
+                Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" `
+                    -Name SystemUsesLightTheme -Value 0 -Type DWord -Force
                 $success = $true
             }
             "Enable Long Paths" {
@@ -145,25 +151,19 @@ function Invoke-Tweak {
                 $success = $true
             }
             "Disable Widgets" {
-                # v1.1 FIX: طريقة متعددة المستويات
-                # محاولة 1: reg add (يتجاوز PowerShell permissions)
-                $regResult = reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
-                    /v TaskbarDa /t REG_DWORD /d 0 /f 2>&1
-                
-                if ($LASTEXITCODE -eq 0) {
-                    $success = $true
-                } else {
-                    # محاولة 2: إعادة تشغيل Explorer ثم المحاولة
+                try {
+                    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+                        /v TaskbarDa /t REG_DWORD /d 0 /f 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $success = $true }
+                } catch {
                     try {
                         Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-                        Start-Sleep -Seconds 2
+                        Start-Sleep 2
                         Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
                             -Name TaskbarDa -Value 0 -Type DWord -Force -ErrorAction Stop
                         Start-Process explorer
                         $success = $true
-                    } catch {
-                        $errorMsg = $_.Exception.Message
-                    }
+                    } catch { $errorMsg = $_.Exception.Message }
                 }
             }
             "Disable Start Recommendations" {
@@ -172,11 +172,11 @@ function Invoke-Tweak {
                 $success = $true
             }
             "Disable Xbox Services" {
-                $anySuccess = $false
+                $any = $false
                 foreach ($s in 'XblAuthManager','XblGameSave','XboxNetApiSvc') {
-                    try { Set-Service -Name $s -StartupType Disabled -ErrorAction Stop; $anySuccess = $true } catch {}
+                    try { Set-Service -Name $s -StartupType Disabled -ErrorAction Stop; $any = $true } catch {}
                 }
-                $success = $anySuccess
+                $success = $any
             }
             "Disable Remote Registry" {
                 try { Set-Service -Name RemoteRegistry -StartupType Disabled -ErrorAction Stop; $success = $true } catch { $errorMsg = $_.Exception.Message }
@@ -193,65 +193,56 @@ function Invoke-Tweak {
             "Empty Recycle Bin" {
                 try { Clear-RecycleBin -Force -ErrorAction Stop; $success = $true } catch { $errorMsg = $_.Exception.Message }
             }
-            default {
-                Write-Log "Unknown tweak: $Name" 'WARN'
-            }
         }
 
-        # تسجيل النتيجة الصحيحة
-        if ($success) {
-            Write-Log "OK: $Name" 'OK'
-        } else {
-            Write-Log "FAILED: $Name - $errorMsg" 'ERROR'
-        }
+        if ($success) { Write-Log "OK: $Name" 'OK' }
+        else { Write-Log "FAILED: $Name - $errorMsg" 'ERROR' }
     } catch {
         Write-Log "FAILED: $Name - $($_.Exception.Message)" 'ERROR'
     }
 }
 
 # ═══════════════════════════════════════════════════════════
-#  APPS
+#  APPS CATALOG — مع أيقونات
 # ═══════════════════════════════════════════════════════════
 
-$script:AppMap = @{
-    "Chrome"        = "Google.Chrome"
-    "Firefox"       = "Mozilla.Firefox"
-    "Brave"         = "Brave.Brave"
-    "Discord"       = "Discord.Discord"
-    "Telegram"      = "Telegram.TelegramDesktop"
-    "WhatsApp"      = "WhatsApp.WhatsApp"
-    "Zoom"          = "Zoom.Zoom"
-    "Slack"         = "SlackTechnologies.Slack"
-    "Signal"        = "OpenWhisperSystems.Signal"
-    "VS Code"       = "Microsoft.VisualStudioCode"
-    "Git"           = "Git.Git"
-    "Docker"        = "Docker.DockerDesktop"
-    "Node.js LTS"   = "OpenJS.NodeJS.LTS"
-    "Python 3.12"   = "Python.Python.3.12"
-    "7-Zip"         = "7zip.7zip"
-    "VLC"           = "VideoLAN.VLC"
-    "Notepad++"     = "Notepad++.Notepad++"
-    "PowerToys"     = "Microsoft.PowerToys"
-    "Steam"         = "Valve.Steam"
-    "Everything"    = "voidtools.Everything"
-}
+$script:Apps = @(
+    @{Name="Chrome";      Id="Google.Chrome";                Icon="🌐"; Category="Browsers"}
+    @{Name="Firefox";     Id="Mozilla.Firefox";              Icon="🦊"; Category="Browsers"}
+    @{Name="Brave";       Id="Brave.Brave";                  Icon="🦁"; Category="Browsers"}
+    @{Name="Vivaldi";     Id="Vivaldi.Vivaldi";              Icon="🎵"; Category="Browsers"}
+    @{Name="Discord";     Id="Discord.Discord";              Icon="💬"; Category="Communication"}
+    @{Name="Telegram";    Id="Telegram.TelegramDesktop";     Icon="✈️"; Category="Communication"}
+    @{Name="WhatsApp";    Id="WhatsApp.WhatsApp";            Icon="📱"; Category="Communication"}
+    @{Name="Zoom";        Id="Zoom.Zoom";                    Icon="📹"; Category="Communication"}
+    @{Name="Slack";       Id="SlackTechnologies.Slack";      Icon="💼"; Category="Communication"}
+    @{Name="Signal";      Id="OpenWhisperSystems.Signal";    Icon="🔒"; Category="Communication"}
+    @{Name="VS Code";     Id="Microsoft.VisualStudioCode";   Icon="📝"; Category="Development"}
+    @{Name="Cursor";      Id="Anysphere.Cursor";             Icon="⚡"; Category="Development"}
+    @{Name="Git";         Id="Git.Git";                      Icon="🔀"; Category="Development"}
+    @{Name="Docker";      Id="Docker.DockerDesktop";         Icon="🐳"; Category="Development"}
+    @{Name="Node.js LTS"; Id="OpenJS.NodeJS.LTS";            Icon="🟢"; Category="Development"}
+    @{Name="Python 3.12"; Id="Python.Python.3.12";           Icon="🐍"; Category="Development"}
+    @{Name="7-Zip";       Id="7zip.7zip";                    Icon="🗜️"; Category="Utilities"}
+    @{Name="VLC";         Id="VideoLAN.VLC";                 Icon="🎬"; Category="Multimedia"}
+    @{Name="Notepad++";   Id="Notepad++.Notepad++";          Icon="📄"; Category="Utilities"}
+    @{Name="PowerToys";   Id="Microsoft.PowerToys";          Icon="🛠️"; Category="Utilities"}
+    @{Name="Everything";  Id="voidtools.Everything";         Icon="🔍"; Category="Utilities"}
+    @{Name="Steam";       Id="Valve.Steam";                  Icon="🎮"; Category="Gaming"}
+)
 
 function Install-App {
-    param([string]$WingetId)
-    Write-Log "Installing: $WingetId"
+    param([string]$WingetId, [string]$AppName)
+    Write-Log "Installing: $AppName ($WingetId)"
     try {
         winget install --id $WingetId --silent `
             --accept-package-agreements --accept-source-agreements `
             --disable-interactivity 2>&1 | Out-Null
-        Write-Log "Installed: $WingetId" 'OK'
+        Write-Log "Installed: $AppName" 'OK'
     } catch {
-        Write-Log "Install failed: $WingetId - $($_.Exception.Message)" 'ERROR'
+        Write-Log "Install failed: $AppName" 'ERROR'
     }
 }
-
-# ═══════════════════════════════════════════════════════════
-#  DNS
-# ═══════════════════════════════════════════════════════════
 
 function Set-DNS {
     param([string]$Provider)
@@ -266,7 +257,7 @@ function Set-DNS {
         Get-NetAdapter | Where-Object Status -eq 'Up' | ForEach-Object {
             Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses
         }
-        Write-Log "DNS: Default (DHCP)" 'OK'
+        Write-Log "DNS: Default"
         return
     }
     if ($map.ContainsKey($Provider)) {
@@ -278,127 +269,255 @@ function Set-DNS {
 }
 
 # ═══════════════════════════════════════════════════════════
-#  WPF GUI
+#  WPF GUI — Premium Design
 # ═══════════════════════════════════════════════════════════
 
-Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="RedzUtil v1.1 - Windows Toolbox"
-        Height="750" Width="1100"
+        Title="RedzUtil v2.0" Height="820" Width="1280"
         WindowStartupLocation="CenterScreen"
-        Background="#141414" Foreground="#e0e0e0">
+        Background="#0d0d12" Foreground="#e8e8f0"
+        WindowStyle="None" AllowsTransparency="False"
+        ResizeMode="CanResizeWithGrip">
+
   <Window.Resources>
-    <Style TargetType="Button">
-      <Setter Property="Background" Value="#252525"/>
-      <Setter Property="Foreground" Value="#e0e0e0"/>
-      <Setter Property="BorderBrush" Value="#444"/>
-      <Setter Property="Padding" Value="10,6"/>
-      <Setter Property="Margin" Value="3"/>
-      <Setter Property="Cursor" Value="Hand"/>
-    </Style>
-    <Style TargetType="CheckBox">
-      <Setter Property="Foreground" Value="#e0e0e0"/>
+    <!-- Color palette -->
+    <SolidColorBrush x:Key="BgDark"     Color="#0d0d12"/>
+    <SolidColorBrush x:Key="BgPanel"    Color="#16161f"/>
+    <SolidColorBrush x:Key="BgCard"     Color="#1e1e2a"/>
+    <SolidColorBrush x:Key="BgCardHov"  Color="#28283a"/>
+    <SolidColorBrush x:Key="Accent"     Color="#00e5a0"/>
+    <SolidColorBrush x:Key="Accent2"    Color="#7b5cff"/>
+    <SolidColorBrush x:Key="TextDim"    Color="#8a8a9a"/>
+    <SolidColorBrush x:Key="Border"     Color="#2a2a3a"/>
+
+    <!-- Card Button Style -->
+    <Style x:Key="AppCard" TargetType="ToggleButton">
+      <Setter Property="Background" Value="{StaticResource BgCard}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="0"/>
       <Setter Property="Margin" Value="6"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Height" Value="80"/>
+      <Setter Property="Width" Value="200"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="bg" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="10">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="{StaticResource BgCardHov}"/>
+                <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource Accent2}"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="#1a3a2a"/>
+                <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="bg" Property="BorderThickness" Value="2"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
-    <Style TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#e0e0e0"/>
-    </Style>
-    <Style TargetType="TabItem">
-      <Setter Property="Background" Value="#252525"/>
-      <Setter Property="Foreground" Value="#e0e0e0"/>
+
+    <!-- Primary Button -->
+    <Style x:Key="PrimaryBtn" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource Accent}"/>
+      <Setter Property="Foreground" Value="#0d0d12"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="13"/>
       <Setter Property="Padding" Value="20,10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Margin="{TemplateBinding Padding}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="#00ffb0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
+
+    <!-- Secondary Button -->
+    <Style x:Key="SecondaryBtn" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource BgCard}"/>
+      <Setter Property="Foreground" Value="#e8e8f0"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bg" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Margin="{TemplateBinding Padding}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="{StaticResource BgCardHov}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Tweak Card -->
+    <Style x:Key="TweakCard" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="#c8c8d8"/>
+      <Setter Property="Padding" Value="12,10"/>
+      <Setter Property="Margin" Value="0,3"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="bg" Background="{StaticResource BgCard}"
+                    BorderBrush="{StaticResource Border}"
+                    BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <StackPanel Orientation="Horizontal">
+                <Border x:Name="cb" Width="18" Height="18" CornerRadius="4"
+                        Background="Transparent" BorderBrush="{StaticResource Border}"
+                        BorderThickness="2" Margin="0,0,12,0">
+                  <TextBlock x:Name="check" Text="✓" FontWeight="Bold"
+                             Foreground="#0d0d12" HorizontalAlignment="Center"
+                             VerticalAlignment="Center" Visibility="Collapsed"/>
+                </Border>
+                <ContentPresenter VerticalAlignment="Center"/>
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="{StaticResource BgCardHov}"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="bg" Property="Background" Value="#1a3a2a"/>
+                <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="cb" Property="Background" Value="{StaticResource Accent}"/>
+                <Setter TargetName="cb" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
   </Window.Resources>
+
   <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="50"/>
+      <RowDefinition Height="60"/>
       <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="32"/>
     </Grid.RowDefinitions>
-    <TabControl x:Name="MainTabs" Grid.Row="1" Background="#141414" BorderBrush="#333">
-      <TabItem Header="Install">
-        <Grid Margin="15">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="0">
-            <Button x:Name="BtnInstall" Content="INSTALL SELECTED" Height="45"
-                    Background="#0a5a2a" Foreground="White" FontWeight="Bold"/>
-            <Button x:Name="BtnClearApps" Content="Clear Selection"/>
-            <TextBlock x:Name="LblAppCount" Text="Selected: 0" Margin="5,15,0,0"/>
-          </StackPanel>
-          <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="AppsList"/>
-          </ScrollViewer>
-        </Grid>
-      </TabItem>
-      <TabItem Header="Tweaks">
-        <Grid Margin="15">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-          </Grid.RowDefinitions>
-          <StackPanel Orientation="Horizontal" Grid.Row="0">
-            <Button x:Name="BtnStandard" Content="Standard Preset"/>
-            <Button x:Name="BtnMinimal"  Content="Minimal Preset"/>
-            <Button x:Name="BtnAdvanced" Content="Advanced Preset"/>
-            <Button x:Name="BtnClearTweaks" Content="Clear"/>
-          </StackPanel>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="TweaksList"/>
-          </ScrollViewer>
-          <Button x:Name="BtnRunTweaks" Grid.Row="2"
-                  Content="RUN SELECTED TWEAKS" Height="50"
-                  Background="#0a5a2a" Foreground="White" FontWeight="Bold"/>
-        </Grid>
-      </TabItem>
-      <TabItem Header="Config">
-        <Grid Margin="15">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="0">
-            <TextBlock Text="DNS Provider" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
-            <StackPanel x:Name="DnsList"/>
-          </StackPanel>
-          <StackPanel Grid.Column="1">
-            <TextBlock Text="Fixes / Tools" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
-            <Button x:Name="BtnNetReset" Content="Network Reset"/>
-            <Button x:Name="BtnSfcScan"  Content="System File Check (SFC)"/>
-            <Button x:Name="BtnDismRestore" Content="DISM Restore Health"/>
-            <Button x:Name="BtnRestorePoint" Content="Create Restore Point"/>
-            <TextBlock Text="Legacy Panels" FontSize="18" FontWeight="Bold" Margin="0,20,0,10"/>
-            <Button x:Name="BtnControlPanel" Content="Control Panel"/>
-            <Button x:Name="BtnProgramsFeatures" Content="Programs and Features"/>
-            <Button x:Name="BtnNetworkConns" Content="Network Connections"/>
-            <Button x:Name="BtnSystemInfo" Content="System Information"/>
-          </StackPanel>
-        </Grid>
-      </TabItem>
-      <TabItem Header="Updates">
-        <StackPanel Margin="30">
-          <TextBlock Text="Windows Update Control" FontSize="22" FontWeight="Bold"/>
-          <TextBlock Text="Choose an update policy" Margin="0,10,0,20" Foreground="#aaa"/>
-          <Button x:Name="BtnUpdRecommended" Content="Recommended (Defer 365 days)"
-                  Height="50" HorizontalAlignment="Left" Width="400"/>
-          <Button x:Name="BtnUpdDefault" Content="Windows Default"
-                  Height="50" HorizontalAlignment="Left" Width="400"/>
-          <Button x:Name="BtnUpdDisable" Content="Disable Updates (Not recommended)"
-                  Height="50" HorizontalAlignment="Left" Width="400"
-                  Foreground="#ff6666"/>
-        </StackPanel>
-      </TabItem>
-    </TabControl>
-    <Border Grid.Row="2" Background="#0a0a0a" BorderBrush="#333" BorderThickness="0,1,0,0">
+
+    <!-- ═══ TITLE BAR ═══ -->
+    <Border Grid.Row="0" Background="#0a0a10">
       <Grid>
-        <TextBlock x:Name="StatusText" Text="Ready" Margin="10,6" Foreground="#888"/>
-        <TextBlock Text="RedzUtil v1.1" HorizontalAlignment="Right" Margin="10,6" Foreground="#888"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="20,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="⚡" FontSize="20" Foreground="{StaticResource Accent}" VerticalAlignment="Center"/>
+          <TextBlock Text="RedzUtil" FontSize="18" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+          <TextBlock Text="v2.0" FontSize="12" Foreground="{StaticResource TextDim}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,10,0">
+          <Button x:Name="BtnMin" Content="—" Width="40" Height="30" Background="Transparent"
+                  Foreground="#888" BorderThickness="0" FontSize="16"/>
+          <Button x:Name="BtnClose" Content="✕" Width="40" Height="30" Background="Transparent"
+                  Foreground="#888" BorderThickness="0" FontSize="14"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══ HEADER / SEARCH ═══ -->
+    <Border Grid.Row="1" Background="#0a0a10" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,1">
+      <Grid Margin="20,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="300"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="HeaderText" Grid.Column="0" Text="Install Applications"
+                   FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+        <Border Grid.Column="1" Background="{StaticResource BgCard}" CornerRadius="8"
+                BorderBrush="{StaticResource Border}" BorderThickness="1" VerticalAlignment="Center" Height="36">
+          <Grid>
+            <TextBlock Text="🔍  Search..." Foreground="{StaticResource TextDim}"
+                       VerticalAlignment="Center" Margin="12,0,0,0" x:Name="SearchPlaceholder"/>
+            <TextBox x:Name="SearchBox" Background="Transparent" Foreground="#e8e8f0"
+                     BorderThickness="0" Padding="12,0" VerticalContentAlignment="Center"
+                     FontSize="12"/>
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="200"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- Sidebar -->
+      <Border Grid.Column="0" Background="#0a0a10" BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
+        <StackPanel Margin="12">
+          <Button x:Name="NavInstall" Content="📦  Install" Style="{StaticResource SecondaryBtn}"
+                  HorizontalContentAlignment="Left" Margin="0,4"/>
+          <Button x:Name="NavTweaks"  Content="⚙️  Tweaks"  Style="{StaticResource SecondaryBtn}"
+                  HorizontalContentAlignment="Left" Margin="0,4"/>
+          <Button x:Name="NavConfig"  Content="🔧  Config"  Style="{StaticResource SecondaryBtn}"
+                  HorizontalContentAlignment="Left" Margin="0,4"/>
+          <Button x:Name="NavUpdates" Content="🔄  Updates" Style="{StaticResource SecondaryBtn}"
+                  HorizontalContentAlignment="Left" Margin="0,4"/>
+
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,20"/>
+
+          <Button x:Name="NavRun" Content="▶  RUN SELECTED" Style="{StaticResource PrimaryBtn}"
+                  Margin="0,4" Height="44"/>
+          <Button x:Name="NavClear" Content="✕  Clear" Style="{StaticResource SecondaryBtn}"
+                  Margin="0,4"/>
+
+          <TextBlock x:Name="StatusCount" Text="0 selected" Foreground="{StaticResource TextDim}"
+                     FontSize="11" Margin="0,20,0,0" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Content Area -->
+      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20">
+        <StackPanel x:Name="ContentArea"/>
+      </ScrollViewer>
+    </Grid>
+
+    <!-- ═══ STATUS BAR ═══ -->
+    <Border Grid.Row="3" Background="#0a0a10" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0">
+      <Grid Margin="20,0">
+        <TextBlock x:Name="StatusText" Text="Ready" Foreground="{StaticResource TextDim}"
+                   FontSize="11" VerticalAlignment="Center"/>
+        <TextBlock Text="RedzUtil v2.0" Foreground="{StaticResource TextDim}"
+                   FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
       </Grid>
     </Border>
   </Grid>
@@ -408,157 +527,281 @@ Add-Type -AssemblyName PresentationFramework
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
-$AppsList    = $window.FindName("AppsList")
-$TweaksList  = $window.FindName("TweaksList")
-$DnsList     = $window.FindName("DnsList")
-$StatusText  = $window.FindName("StatusText")
-$LblAppCount = $window.FindName("LblAppCount")
+# ═══════════════════════════════════════════════════════════
+#  ELEMENTS
+# ═══════════════════════════════════════════════════════════
 
-foreach ($appName in $script:AppMap.Keys | Sort-Object) {
-    $cb = New-Object System.Windows.Controls.CheckBox
-    $cb.Content = $appName
-    $cb.Tag = $appName
-    $cb.Add_Checked({
-        [void]$script:SelectedApps.Add($this.Tag)
-        $LblAppCount.Text = "Selected: $($script:SelectedApps.Count)"
-    })
-    $cb.Add_Unchecked({
-        $script:SelectedApps.Remove($this.Tag) | Out-Null
-        $LblAppCount.Text = "Selected: $($script:SelectedApps.Count)"
-    })
-    $AppsList.Children.Add($cb) | Out-Null
-}
+$ContentArea  = $window.FindName("ContentArea")
+$HeaderText   = $window.FindName("HeaderText")
+$StatusText   = $window.FindName("StatusText")
+$StatusCount  = $window.FindName("StatusCount")
+$SearchBox    = $window.FindName("SearchBox")
+$SearchPlaceholder = $window.FindName("SearchPlaceholder")
 
-$tweakNames = @(
-    "Disable Telemetry","Disable Activity History","Disable Location Tracking",
-    "Disable Advertising ID","Disable Consumer Features","Disable WPBT",
-    "Disable Delivery Optimization","Disable SysMain","Disable Hibernation",
-    "Enable GPU Scheduling","Enable End Task on Taskbar","Show File Extensions",
-    "Show Hidden Files","Dark Mode","Enable Long Paths","Disable Widgets",
-    "Disable Start Recommendations","Disable Xbox Services","Disable Remote Registry",
-    "Disk Cleanup","Delete Temp Files","Empty Recycle Bin"
-)
-foreach ($t in $tweakNames) {
-    $cb = New-Object System.Windows.Controls.CheckBox
-    $cb.Content = $t
-    $cb.Tag = $t
-    $cb.Add_Checked({   [void]$script:SelectedTweaks.Add($this.Tag) })
-    $cb.Add_Unchecked({ $script:SelectedTweaks.Remove($this.Tag) | Out-Null })
-    $TweaksList.Children.Add($cb) | Out-Null
-}
+# ─── Title bar buttons ───
+$window.FindName("BtnClose").Add_Click({ $window.Close() })
+$window.FindName("BtnMin").Add_Click({ $window.WindowState = 'Minimized' })
 
-foreach ($dns in @("Cloudflare","Google","Quad9","OpenDNS","AdGuard","Default")) {
-    $btn = New-Object System.Windows.Controls.Button
-    $btn.Content = $dns
-    $btn.Tag = $dns
-    $btn.Add_Click({
-        Set-DNS -Provider $this.Tag
-        $StatusText.Text = "DNS: $($this.Tag)"
-    })
-    $DnsList.Children.Add($btn) | Out-Null
-}
-
-$window.FindName("BtnInstall").Add_Click({
-    if ($script:SelectedApps.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Select apps first")
-        return
-    }
-    foreach ($app in $script:SelectedApps) {
-        Install-App -WingetId $script:AppMap[$app]
-    }
-    $StatusText.Text = "Install done - check log"
+# ─── Search placeholder ───
+$SearchBox.Add_GotFocus({ $SearchPlaceholder.Visibility = 'Collapsed' })
+$SearchBox.Add_LostFocus({
+    if ([string]::IsNullOrEmpty($SearchBox.Text)) { $SearchPlaceholder.Visibility = 'Visible' }
 })
 
-$window.FindName("BtnClearApps").Add_Click({
+# ═══════════════════════════════════════════════════════════
+#  VIEWS
+# ═══════════════════════════════════════════════════════════
+
+function Show-InstallView {
+    $ContentArea.Children.Clear()
+    $HeaderText.Text = "Install Applications"
+
+    # Group by Category
+    $categories = $script:Apps | Group-Object Category | Sort-Object Name
+    foreach ($cat in $categories) {
+        $catTitle = New-Object System.Windows.Controls.TextBlock
+        $catTitle.Text = "▸ $($cat.Name)"
+        $catTitle.FontSize = 14
+        $catTitle.FontWeight = "Bold"
+        $catTitle.Foreground = "#7b5cff"
+        $catTitle.Margin = "6,20,0,8"
+        $ContentArea.Children.Add($catTitle) | Out-Null
+
+        $wrap = New-Object System.Windows.Controls.WrapPanel
+        foreach ($app in ($cat.Group | Sort-Object Name)) {
+            $tile = New-Object System.Windows.Controls.Primitives.ToggleButton
+            $tile.Style = $window.FindResource("AppCard")
+            $tile.Tag = $app.Id
+
+            $inner = New-Object System.Windows.Controls.StackPanel
+            $inner.VerticalAlignment = "Center"
+            $inner.HorizontalAlignment = "Center"
+
+            $icon = New-Object System.Windows.Controls.TextBlock
+            $icon.Text = $app.Icon
+            $icon.FontSize = 28
+            $icon.HorizontalAlignment = "Center"
+            $inner.Children.Add($icon) | Out-Null
+
+            $name = New-Object System.Windows.Controls.TextBlock
+            $name.Text = $app.Name
+            $name.FontSize = 12
+            $name.FontWeight = "SemiBold"
+            $name.Foreground = "#e8e8f0"
+            $name.HorizontalAlignment = "Center"
+            $name.Margin = "0,4,0,0"
+            $inner.Children.Add($name) | Out-Null
+
+            $tile.Content = $inner
+            $tile.Add_Checked({
+                if (-not $script:SelectedApps.Contains($this.Tag)) {
+                    [void]$script:SelectedApps.Add($this.Tag)
+                    $StatusCount.Text = "$($script:SelectedApps.Count) apps selected"
+                }
+            })
+            $tile.Add_Unchecked({
+                $script:SelectedApps.Remove($this.Tag) | Out-Null
+                $StatusCount.Text = "$($script:SelectedApps.Count) apps selected"
+            })
+            $wrap.Children.Add($tile) | Out-Null
+        }
+        $ContentArea.Children.Add($wrap) | Out-Null
+    }
+}
+
+function Show-TweaksView {
+    $ContentArea.Children.Clear()
+    $HeaderText.Text = "System Tweaks"
+
+    $tweakNames = @(
+        "Disable Telemetry","Disable Activity History","Disable Location Tracking",
+        "Disable Advertising ID","Disable Consumer Features","Disable WPBT",
+        "Disable Delivery Optimization","Disable SysMain","Disable Hibernation",
+        "Enable GPU Scheduling","Enable End Task on Taskbar","Show File Extensions",
+        "Show Hidden Files","Dark Mode","Enable Long Paths","Disable Widgets",
+        "Disable Start Recommendations","Disable Xbox Services","Disable Remote Registry",
+        "Disk Cleanup","Delete Temp Files","Empty Recycle Bin"
+    )
+
+    foreach ($t in $tweakNames) {
+        $cb = New-Object System.Windows.Controls.CheckBox
+        $cb.Style = $window.FindResource("TweakCard")
+        $cb.Content = "  $t"
+        $cb.Tag = $t
+        $cb.Add_Checked({
+            if (-not $script:SelectedTweaks.Contains($this.Tag)) {
+                [void]$script:SelectedTweaks.Add($this.Tag)
+                $StatusCount.Text = "$($script:SelectedTweaks.Count) tweaks selected"
+            }
+        })
+        $cb.Add_Unchecked({
+            $script:SelectedTweaks.Remove($this.Tag) | Out-Null
+            $StatusCount.Text = "$($script:SelectedTweaks.Count) tweaks selected"
+        })
+        $ContentArea.Children.Add($cb) | Out-Null
+    }
+}
+
+function Show-ConfigView {
+    $ContentArea.Children.Clear()
+    $HeaderText.Text = "Configuration"
+
+    $dnsTitle = New-Object System.Windows.Controls.TextBlock
+    $dnsTitle.Text = "▸ DNS Provider"
+    $dnsTitle.FontSize = 14; $dnsTitle.FontWeight = "Bold"
+    $dnsTitle.Foreground = "#7b5cff"; $dnsTitle.Margin = "6,10,0,8"
+    $ContentArea.Children.Add($dnsTitle) | Out-Null
+
+    $dnsWrap = New-Object System.Windows.Controls.WrapPanel
+    foreach ($dns in @("Cloudflare","Google","Quad9","OpenDNS","AdGuard","Default")) {
+        $btn = New-Object System.Windows.Controls.Button
+        $btn.Style = $window.FindResource("SecondaryBtn")
+        $btn.Content = $dns
+        $btn.Tag = $dns
+        $btn.Width = 160
+        $btn.Margin = "5"
+        $btn.Add_Click({
+            Set-DNS -Provider $this.Tag
+            $StatusText.Text = "DNS: $($this.Tag)"
+        })
+        $dnsWrap.Children.Add($btn) | Out-Null
+    }
+    $ContentArea.Children.Add($dnsWrap) | Out-Null
+
+    $toolsTitle = New-Object System.Windows.Controls.TextBlock
+    $toolsTitle.Text = "▸ Fixes & Tools"
+    $toolsTitle.FontSize = 14; $toolsTitle.FontWeight = "Bold"
+    $toolsTitle.Foreground = "#7b5cff"; $toolsTitle.Margin = "6,30,0,8"
+    $ContentArea.Children.Add($toolsTitle) | Out-Null
+
+    $tools = @(
+        @{Name="Network Reset";   Action={ Start-Process "netsh" -ArgumentList "int ip reset" -Wait -NoNewWindow }}
+        @{Name="System File Check"; Action={ Start-Process "sfc" -ArgumentList "/scannow" -Wait -NoNewWindow }}
+        @{Name="DISM Restore";    Action={ Start-Process "dism" -ArgumentList "/Online /Cleanup-Image /RestoreHealth" -Wait -NoNewWindow }}
+        @{Name="Restore Point";   Action={ New-RestorePoint }}
+        @{Name="Control Panel";   Action={ Start-Process "control" }}
+        @{Name="Programs";        Action={ Start-Process "appwiz.cpl" }}
+        @{Name="Network";         Action={ Start-Process "ncpa.cpl" }}
+        @{Name="System Info";     Action={ Start-Process "msinfo32" }}
+    )
+    $toolsWrap = New-Object System.Windows.Controls.WrapPanel
+    foreach ($t in $tools) {
+        $btn = New-Object System.Windows.Controls.Button
+        $btn.Style = $window.FindResource("SecondaryBtn")
+        $btn.Content = $t.Name
+        $btn.Width = 160
+        $btn.Margin = "5"
+        $btn.Add_Click($t.Action)
+        $toolsWrap.Children.Add($btn) | Out-Null
+    }
+    $ContentArea.Children.Add($toolsWrap) | Out-Null
+}
+
+function Show-UpdatesView {
+    $ContentArea.Children.Clear()
+    $HeaderText.Text = "Windows Update Control"
+
+    $profiles = @(
+        @{Name="Recommended"; Desc="Defers feature updates 365 days"; Color="#00e5a0"}
+        @{Name="Windows Default"; Desc="Restore default Windows settings"; Color="#7b5cff"}
+        @{Name="Disable Updates"; Desc="Not recommended"; Color="#ff5555"}
+    )
+
+    foreach ($p in $profiles) {
+        $card = New-Object System.Windows.Controls.Border
+        $card.Background = "#1e1e2a"
+        $card.BorderBrush = $p.Color
+        $card.BorderThickness = "2"
+        $card.CornerRadius = "10"
+        $card.Padding = "20"
+        $card.Margin = "5,5,5,15"
+        $card.MaxWidth = 700
+        $card.HorizontalAlignment = "Left"
+
+        $inner = New-Object System.Windows.Controls.StackPanel
+
+        $title = New-Object System.Windows.Controls.TextBlock
+        $title.Text = $p.Name
+        $title.FontSize = 18
+        $title.FontWeight = "Bold"
+        $title.Foreground = $p.Color
+        $inner.Children.Add($title) | Out-Null
+
+        $desc = New-Object System.Windows.Controls.TextBlock
+        $desc.Text = $p.Desc
+        $desc.Foreground = "#8a8a9a"
+        $desc.Margin = "0,6,0,12"
+        $inner.Children.Add($desc) | Out-Null
+
+        $btn = New-Object System.Windows.Controls.Button
+        $btn.Content = "Apply"
+        $btn.Style = $window.FindResource("PrimaryBtn")
+        $btn.HorizontalAlignment = "Left"
+        $btn.Tag = $p.Name
+        $btn.Add_Click({
+            $updatePath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+            switch ($this.Tag) {
+                "Recommended" {
+                    if (-not (Test-Path $updatePath)) { New-Item $updatePath -Force | Out-Null }
+                    Set-ItemProperty $updatePath -Name DeferFeatureUpdates -Value 1 -Type DWord -Force
+                    Set-ItemProperty $updatePath -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord -Force
+                    Set-ItemProperty $updatePath -Name DeferQualityUpdates -Value 1 -Type DWord -Force
+                    Set-ItemProperty $updatePath -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord -Force
+                }
+                "Windows Default" {
+                    Remove-Item $updatePath -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                "Disable Updates" {
+                    if (-not (Test-Path $updatePath)) { New-Item $updatePath -Force | Out-Null }
+                    Set-ItemProperty $updatePath -Name NoAutoUpdate -Value 1 -Type DWord -Force
+                }
+            }
+            $StatusText.Text = "Updates: $($this.Tag)"
+        })
+        $inner.Children.Add($btn) | Out-Null
+
+        $card.Child = $inner
+        $ContentArea.Children.Add($card) | Out-Null
+    }
+}
+
+# ═══════════════════════════════════════════════════════════
+#  NAVIGATION
+# ═══════════════════════════════════════════════════════════
+
+$window.FindName("NavInstall").Add_Click({ Show-InstallView })
+$window.FindName("NavTweaks").Add_Click({  Show-TweaksView  })
+$window.FindName("NavConfig").Add_Click({  Show-ConfigView  })
+$window.FindName("NavUpdates").Add_Click({ Show-UpdatesView })
+
+$window.FindName("NavClear").Add_Click({
     $script:SelectedApps.Clear()
-    foreach ($child in $AppsList.Children) { $child.IsChecked = $false }
-    $LblAppCount.Text = "Selected: 0"
-})
-
-$window.FindName("BtnStandard").Add_Click({
-    $preset = @("Disable Telemetry","Disable Activity History","Disable Location Tracking",
-                "Disable Advertising ID","Disable Consumer Features","Disable Delivery Optimization",
-                "Disable SysMain","Enable End Task on Taskbar","Show File Extensions",
-                "Show Hidden Files","Dark Mode","Disable Widgets","Disk Cleanup",
-                "Delete Temp Files","Empty Recycle Bin")
-    foreach ($child in $TweaksList.Children) {
-        $child.IsChecked = $preset -contains $child.Tag
-    }
-})
-
-$window.FindName("BtnMinimal").Add_Click({
-    $preset = @("Disable Telemetry","Disable Advertising ID","Disk Cleanup","Empty Recycle Bin")
-    foreach ($child in $TweaksList.Children) {
-        $child.IsChecked = $preset -contains $child.Tag
-    }
-})
-
-$window.FindName("BtnAdvanced").Add_Click({
-    foreach ($child in $TweaksList.Children) { $child.IsChecked = $true }
-})
-
-$window.FindName("BtnClearTweaks").Add_Click({
-    foreach ($child in $TweaksList.Children) { $child.IsChecked = $false }
     $script:SelectedTweaks.Clear()
+    $StatusCount.Text = "0 selected"
+    Show-InstallView
 })
 
-$window.FindName("BtnRunTweaks").Add_Click({
-    if ($script:SelectedTweaks.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Select tweaks first")
-        return
+$window.FindName("NavRun").Add_Click({
+    if ($script:SelectedApps.Count -gt 0) {
+        New-RestorePoint
+        foreach ($id in $script:SelectedApps) {
+            $app = $script:Apps | Where-Object { $_.Id -eq $id } | Select-Object -First 1
+            if ($app) { Install-App -WingetId $app.Id -AppName $app.Name }
+        }
     }
-    New-RestorePoint
-    $ok = 0; $fail = 0
-    foreach ($t in $script:SelectedTweaks) {
-        Invoke-Tweak -Name $t
+    if ($script:SelectedTweaks.Count -gt 0) {
+        New-RestorePoint
+        foreach ($t in $script:SelectedTweaks) { Invoke-Tweak -Name $t }
     }
-    [System.Windows.MessageBox]::Show("Done! Check log on Desktop")
-    $StatusText.Text = "Tweaks applied - check log"
+    [System.Windows.MessageBox]::Show("Done! Check log on Desktop", "RedzUtil")
+    $StatusText.Text = "Complete - check log"
 })
 
-$window.FindName("BtnNetReset").Add_Click({
-    Start-Process "netsh" -ArgumentList "int ip reset" -Wait -NoNewWindow
-    $StatusText.Text = "Network reset"
-})
+# ═══════════════════════════════════════════════════════════
+#  START
+# ═══════════════════════════════════════════════════════════
 
-$window.FindName("BtnSfcScan").Add_Click({
-    Start-Process "sfc" -ArgumentList "/scannow" -Wait -NoNewWindow
-    $StatusText.Text = "SFC done"
-})
-
-$window.FindName("BtnDismRestore").Add_Click({
-    Start-Process "dism" -ArgumentList "/Online /Cleanup-Image /RestoreHealth" -Wait -NoNewWindow
-    $StatusText.Text = "DISM done"
-})
-
-$window.FindName("BtnRestorePoint").Add_Click({ New-RestorePoint })
-$window.FindName("BtnControlPanel").Add_Click({     Start-Process "control" })
-$window.FindName("BtnProgramsFeatures").Add_Click({ Start-Process "appwiz.cpl" })
-$window.FindName("BtnNetworkConns").Add_Click({     Start-Process "ncpa.cpl" })
-$window.FindName("BtnSystemInfo").Add_Click({       Start-Process "msinfo32" })
-
-$window.FindName("BtnUpdRecommended").Add_Click({
-    $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
-    Set-ItemProperty $p -Name DeferFeatureUpdates -Value 1 -Type DWord -Force
-    Set-ItemProperty $p -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord -Force
-    Set-ItemProperty $p -Name DeferQualityUpdates -Value 1 -Type DWord -Force
-    Set-ItemProperty $p -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord -Force
-    $StatusText.Text = "Updates: Recommended"
-})
-
-$window.FindName("BtnUpdDefault").Add_Click({
-    Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" -Recurse -Force -ErrorAction SilentlyContinue
-    $StatusText.Text = "Updates: Default"
-})
-
-$window.FindName("BtnUpdDisable").Add_Click({
-    $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
-    Set-ItemProperty $p -Name NoAutoUpdate -Value 1 -Type DWord -Force
-    $StatusText.Text = "Updates: Disabled"
-})
-
-Write-Log "RedzUtil v1.1 started"
+Show-InstallView
+Write-Log "RedzUtil v2.0 started"
 $window.ShowDialog() | Out-Null
 Write-Log "RedzUtil closed"
